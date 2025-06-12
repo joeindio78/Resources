@@ -1,0 +1,17 @@
+{
+  "name": "cursor1_1",
+  "version": "1.0.0",
+  "description": "A .NET 9 Web API for managing resources and their competencies.",
+  "main": "index.js",
+  "scripts": {
+    "start:api": "cd Resources.API && dotnet run",
+    "start:client": "cd resources-client && npm run dev",
+    "dev": "concurrently \"npm run start:api\" \"npm run start:client\""
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}

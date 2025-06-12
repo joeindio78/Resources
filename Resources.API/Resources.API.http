@@ -1,0 +1,54 @@
+@baseUrl = http://localhost:5062
+
+### Login to get JWT token
+# @name login
+POST {{baseUrl}}/login
+Content-Type: application/json
+
+{
+    "email": "admin@admin.io",
+    "password": "admin"
+}
+
+### Store the JWT token from the login response
+@authToken = {{login.response.body.token}}
+
+### Get all resources (paginated)
+GET {{baseUrl}}/resources
+Authorization: Bearer {{authToken}}
+
+### Get resources with filters
+GET {{baseUrl}}/resources?pageNumber=1&pageSize=5&name=John&minAge=25&maxAge=45&minYearsOfExperience=2&maxYearsOfExperience=10&competency=Programming
+Authorization: Bearer {{authToken}}
+
+### Get resource by ID
+GET {{baseUrl}}/resources/1
+Authorization: Bearer {{authToken}}
+
+### Create new resource
+POST {{baseUrl}}/resources
+Authorization: Bearer {{authToken}}
+Content-Type: application/json
+
+{
+    "name": "John Doe",
+    "birthDate": "1990-01-01",
+    "yearsOfExperience": 5,
+    "competencyIds": [1, 2]
+}
+
+### Update resource
+PUT {{baseUrl}}/resources/1
+Authorization: Bearer {{authToken}}
+Content-Type: application/json
+
+{
+    "name": "John Doe Updated",
+    "birthDate": "1990-01-01",
+    "yearsOfExperience": 6,
+    "competencyIds": [1, 2, 3]
+}
+
+### Get all competencies
+GET {{baseUrl}}/competencies
+Authorization: Bearer {{authToken}} 
