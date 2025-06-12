@@ -2,22 +2,13 @@ using System.Text.Json.Serialization;
 
 namespace Resources.API.Models;
 
-public class Competency
+public record Competency(int Id, string Name)
 {
-    public Competency(int id, string name)
-    {
-        Id = id;
-        Name = name;
-        Resources = new List<Resource>();
-    }
-
-    private Competency()
+    public Competency() : this(0, string.Empty)
     {
         Resources = new List<Resource>();
     }
 
-    public int Id { get; set; }
-    public string Name { get; set; } = string.Empty;
     [JsonIgnore]
     public ICollection<Resource> Resources { get; set; }
 } 

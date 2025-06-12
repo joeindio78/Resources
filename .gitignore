@@ -38,4 +38,7 @@ msbuild.wrn
 *.db
 *.db-shm
 *.db-wal 
+
 node_modules
+TestResults
+coveragereport

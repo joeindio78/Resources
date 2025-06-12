@@ -22,7 +22,7 @@ public class ConfigureSwaggerOptions : IConfigureOptions<SwaggerGenOptions>
                 description.GroupName,
                 new OpenApiInfo
                 {
-                    Title = "Resources API",
+                    Title = $"Resources API {description.GroupName}",
                     Version = description.ApiVersion.ToString(),
                     Description = "An API for managing resources and their competencies",
                     Contact = new OpenApiContact
@@ -35,8 +35,8 @@ public class ConfigureSwaggerOptions : IConfigureOptions<SwaggerGenOptions>
 
         options.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
         {
-            Description = "JWT Authorization header using the Bearer scheme",
-            Name = "Authorization",
+            Description = "JWT Authorization header using the Bearer scheme.",
+            Name = "Bearer",
             In = ParameterLocation.Header,
             Type = SecuritySchemeType.Http,
             Scheme = "bearer"

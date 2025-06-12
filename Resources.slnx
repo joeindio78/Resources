@@ -1,4 +1,5 @@
 <Solution>
   <Folder Name="/Solution Items/" />
   <Project Path="Resources.API/Resources.API.csproj" />
+  <Project Path="Resources.API.Tests/Resources.API.Tests.csproj" />
 </Solution>

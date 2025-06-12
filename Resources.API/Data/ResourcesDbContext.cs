@@ -11,39 +11,27 @@ public class ResourcesDbContext : DbContext
     {
     }
 
-    public virtual DbSet<Resource> Resources => Set<Resource>();
-    public virtual DbSet<Competency> Competencies => Set<Competency>();
-    public virtual DbSet<ResourceCompetency> ResourceCompetencies => Set<ResourceCompetency>();
+    public DbSet<Resource> Resources => Set<Resource>();
+    public DbSet<Competency> Competencies => Set<Competency>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.Entity<Resource>(entity =>
         {
             entity.HasKey(e => e.Id);
-            entity.Property(e => e.Name).HasMaxLength(100);
+            entity.Property(e => e.Name).IsRequired();
+            entity.Property(e => e.BirthDate).IsRequired();
+            entity.Property(e => e.YearsOfExperience).IsRequired();
             
             entity.HasMany(e => e.Competencies)
-                  .WithMany(e => e.Resources)
-                  .UsingEntity<ResourceCompetency>();
+                .WithMany(e => e.Resources)
+                .UsingEntity(j => j.ToTable("ResourceCompetencies"));
         });
 
         modelBuilder.Entity<Competency>(entity =>
         {
             entity.HasKey(e => e.Id);
-            entity.Property(e => e.Name).HasMaxLength(50).IsRequired();
-        });
-
-        modelBuilder.Entity<ResourceCompetency>(entity =>
-        {
-            entity.HasKey(e => new { e.ResourceId, e.CompetencyId });
-
-            entity.HasOne(rc => rc.Resource)
-                  .WithMany()
-                  .HasForeignKey(rc => rc.ResourceId);
-
-            entity.HasOne(rc => rc.Competency)
-                  .WithMany()
-                  .HasForeignKey(rc => rc.CompetencyId);
+            entity.Property(e => e.Name).IsRequired();
         });
 
         // Seed competencies
@@ -56,33 +44,41 @@ public class ResourcesDbContext : DbContext
             new Competency(5, "SQL"),
             new Competency(6, "React"),
             new Competency(7, "Angular"),
-            new Competency(8, "Node.js"),
-            new Competency(9, "Docker"),
-            new Competency(10, "Azure")
+            new Competency(8, "Node.js")
         };
+
         modelBuilder.Entity<Competency>().HasData(competencies);
 
         // Seed resources
+        var resources = new[]
+        {
+            new Resource(1, "John Doe", new DateOnly(1990, 1, 1), 5, new List<Competency> { competencies[0], competencies[1] }),
+            new Resource(2, "Jane Smith", new DateOnly(1985, 6, 15), 8, new List<Competency> { competencies[1], competencies[2] }),
+            new Resource(3, "Bob Johnson", new DateOnly(1988, 3, 20), 6, new List<Competency> { competencies[3], competencies[4] }),
+            new Resource(4, "Alice Brown", new DateOnly(1992, 9, 10), 4, new List<Competency> { competencies[5], competencies[6] }),
+            new Resource(5, "Charlie Wilson", new DateOnly(1987, 12, 5), 7, new List<Competency> { competencies[7], competencies[0] })
+        };
+
         modelBuilder.Entity<Resource>().HasData(
-            new Resource(1, "John Doe", new DateOnly(1990, 1, 1), 5),
-            new Resource(2, "Jane Smith", new DateOnly(1985, 6, 15), 8),
-            new Resource(3, "Bob Johnson", new DateOnly(1995, 3, 20), 3),
-            new Resource(4, "Alice Brown", new DateOnly(1992, 8, 10), 6),
-            new Resource(5, "Charlie Wilson", new DateOnly(1988, 12, 25), 10)
+            resources.Select(r => new
+            {
+                r.Id,
+                r.Name,
+                r.BirthDate,
+                r.YearsOfExperience
+            })
         );
 
         // Seed resource-competency relationships
-        modelBuilder.Entity<ResourceCompetency>().HasData(
-            new ResourceCompetency { ResourceId = 1, CompetencyId = 1 },  // John: C#
-            new ResourceCompetency { ResourceId = 1, CompetencyId = 6 },  // John: React
-            new ResourceCompetency { ResourceId = 2, CompetencyId = 2 },  // Jane: JavaScript
-            new ResourceCompetency { ResourceId = 2, CompetencyId = 7 },  // Jane: Angular
-            new ResourceCompetency { ResourceId = 3, CompetencyId = 3 },  // Bob: Python
-            new ResourceCompetency { ResourceId = 3, CompetencyId = 8 },  // Bob: Node.js
-            new ResourceCompetency { ResourceId = 4, CompetencyId = 4 },  // Alice: Java
-            new ResourceCompetency { ResourceId = 4, CompetencyId = 9 },  // Alice: Docker
-            new ResourceCompetency { ResourceId = 5, CompetencyId = 5 },  // Charlie: SQL
-            new ResourceCompetency { ResourceId = 5, CompetencyId = 10 }  // Charlie: Azure
-        );
+        var resourceCompetencies = resources.SelectMany(r => r.Competencies.Select(c => new
+        {
+            ResourcesId = r.Id,
+            CompetenciesId = c.Id
+        }));
+
+        modelBuilder.Entity<Resource>()
+            .HasMany(e => e.Competencies)
+            .WithMany(e => e.Resources)
+            .UsingEntity(j => j.HasData(resourceCompetencies));
     }
 }

@@ -30,10 +30,17 @@ public class ResourceService : IResourceService
 {
     private readonly ResourcesDbContext _context;
     private static readonly ActivitySource _activitySource = ActivitySources.ResourcesApi;
+    private DateTime? _currentDate;  // For testing purposes
 
     public ResourceService(ResourcesDbContext context)
     {
         _context = context;
+    }
+
+    // For testing purposes
+    public void SetCurrentDate(DateTime date)
+    {
+        _currentDate = date;
     }
 
     public async Task<PagedResult<Resource>> ListResourcesAsync(
@@ -49,6 +56,11 @@ public class ResourceService : IResourceService
         string? sortDirection = null)
     {
         using var activity = _activitySource.StartActivity("ListResources");
+        
+        // Validate and normalize input parameters
+        pageNumber = pageNumber <= 0 ? 1 : pageNumber;
+        pageSize = pageSize <= 0 ? 10 : pageSize;
+        
         activity?.SetTag("pageNumber", pageNumber);
         activity?.SetTag("pageSize", pageSize);
         activity?.SetTag("filters.name", name);
@@ -66,16 +78,19 @@ public class ResourceService : IResourceService
 
         if (!string.IsNullOrWhiteSpace(name))
         {
-            query = query.Where(r => r.Name != null && 
-                r.Name.ToLower().Contains(name.ToLower()));
+            query = query.Where(r => r.Name.ToLower().Contains(name.ToLower()));
         }
 
-        var today = DateOnly.FromDateTime(DateTime.Now);
+        // Apply age filter if specified
         if (minAge.HasValue || maxAge.HasValue)
         {
-            query = query.Where(r => r.BirthDate.HasValue &&
-                (!minAge.HasValue || today.Year - r.BirthDate.Value.Year >= minAge.Value) &&
-                (!maxAge.HasValue || today.Year - r.BirthDate.Value.Year <= maxAge.Value));
+            var today = _currentDate.HasValue ? DateOnly.FromDateTime(_currentDate.Value) : DateOnly.FromDateTime(DateTime.Today);
+            query = query.Where(r => 
+                (!minAge.HasValue || today.Year - r.BirthDate.Year - (today.Month < r.BirthDate.Month || 
+                    (today.Month == r.BirthDate.Month && today.Day < r.BirthDate.Day) ? 1 : 0) >= minAge.Value) &&
+                (!maxAge.HasValue || today.Year - r.BirthDate.Year - (today.Month < r.BirthDate.Month || 
+                    (today.Month == r.BirthDate.Month && today.Day < r.BirthDate.Day) ? 1 : 0) <= maxAge.Value)
+            );
         }
 
         if (minYearsOfExperience.HasValue)
@@ -88,15 +103,18 @@ public class ResourceService : IResourceService
             query = query.Where(r => r.YearsOfExperience <= maxYearsOfExperience.Value);
         }
 
-        if (!string.IsNullOrWhiteSpace(competency))
+        // Apply competency filter if specified
+        if (!string.IsNullOrEmpty(competency))
         {
-            query = query.Where(r => r.Competencies.Any(c => c.Name.Contains(competency)));
+            query = query.Where(r => r.Competencies.Any(c => 
+                c.Name.Contains(competency, StringComparison.OrdinalIgnoreCase)));
         }
 
         // Apply sorting
         if (!string.IsNullOrWhiteSpace(sortBy))
         {
-            var isDescending = sortDirection?.Equals("desc", StringComparison.OrdinalIgnoreCase) ?? false;
+            var isDescending = string.Equals(sortDirection, "desc", StringComparison.OrdinalIgnoreCase);
+            activity?.SetTag("sort.isDescending", isDescending);
             
             query = sortBy.ToLowerInvariant() switch
             {
@@ -126,6 +144,8 @@ public class ResourceService : IResourceService
             .ToListAsync();
 
         activity?.SetTag("resultCount", items.Count);
+        activity?.SetTag("firstItemName", items.FirstOrDefault()?.Name);
+        activity?.SetTag("lastItemName", items.LastOrDefault()?.Name);
 
         return new PagedResult<Resource>(
             items,
@@ -152,26 +172,32 @@ public class ResourceService : IResourceService
     {
         using var activity = _activitySource.StartActivity("CreateResource");
         activity?.SetTag("resourceName", request.Name);
-        activity?.SetTag("competencyCount", request.CompetencyIds.Length);
+        activity?.SetTag("competencyCount", request.CompetencyIds?.Length ?? 0);
 
         try
         {
+            if (request.CompetencyIds == null || request.CompetencyIds.Length == 0)
+            {
+                throw new ArgumentException("At least one competency must be specified");
+            }
+
             // Validate and get competencies
             var selectedCompetencies = await _context.Competencies
                 .Where(c => request.CompetencyIds.Contains(c.Id))
                 .ToListAsync();
 
-            if (!selectedCompetencies.Any())
+            if (selectedCompetencies.Count != request.CompetencyIds.Length)
             {
-                throw new ArgumentException("At least one valid competency must be specified");
+                throw new ArgumentException("One or more specified competency IDs do not exist");
             }
 
             var resource = new Resource(
-                0,
+                0, // ID will be set by the database
                 request.Name,
-                request.BirthDate,
-                request.YearsOfExperience
-            ).WithCompetencies(selectedCompetencies);
+                request.BirthDate ?? DateOnly.FromDateTime(DateTime.Today),
+                request.YearsOfExperience,
+                selectedCompetencies
+            );
 
             _context.Resources.Add(resource);
             await _context.SaveChangesAsync();
@@ -192,10 +218,15 @@ public class ResourceService : IResourceService
     {
         using var activity = _activitySource.StartActivity("UpdateResource");
         activity?.SetTag("resourceId", id);
-        activity?.SetTag("competencyCount", request.CompetencyIds.Length);
+        activity?.SetTag("competencyCount", request.CompetencyIds?.Length ?? 0);
 
         try
         {
+            if (request.CompetencyIds == null || request.CompetencyIds.Length == 0)
+            {
+                throw new ArgumentException("At least one competency must be specified");
+            }
+
             var existingResource = await _context.Resources
                 .Include(r => r.Competencies)
                 .FirstOrDefaultAsync(r => r.Id == id);
@@ -213,15 +244,17 @@ public class ResourceService : IResourceService
                 .Where(c => request.CompetencyIds.Contains(c.Id))
                 .ToListAsync();
 
-            if (!selectedCompetencies.Any())
+            if (selectedCompetencies.Count != request.CompetencyIds.Length)
             {
-                throw new ArgumentException("At least one valid competency must be specified");
+                throw new ArgumentException("One or more specified competency IDs do not exist");
             }
 
+            // Update the existing resource properties
             existingResource.Name = request.Name ?? existingResource.Name;
             existingResource.BirthDate = request.BirthDate ?? existingResource.BirthDate;
             existingResource.YearsOfExperience = request.YearsOfExperience ?? existingResource.YearsOfExperience;
             
+            // Clear and update competencies
             existingResource.Competencies.Clear();
             foreach (var competency in selectedCompetencies)
             {
@@ -272,5 +305,16 @@ public class ResourceService : IResourceService
             activity?.SetTag("error", ex.Message);
             throw;
         }
+    }
+
+    private int CalculateAge(DateOnly birthDate)
+    {
+        var today = _currentDate.HasValue ? DateOnly.FromDateTime(_currentDate.Value) : DateOnly.FromDateTime(DateTime.Today);
+        var age = today.Year - birthDate.Year;
+        if (today.Month < birthDate.Month || (today.Month == birthDate.Month && today.Day < birthDate.Day))
+        {
+            age--;
+        }
+        return age;
     }
 } 
