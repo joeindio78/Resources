@@ -25,7 +25,21 @@ public class ResourcesDbContext : DbContext
             
             entity.HasMany(e => e.Competencies)
                 .WithMany(e => e.Resources)
-                .UsingEntity(j => j.ToTable("ResourceCompetencies"));
+                .UsingEntity<ResourceCompetency>(
+                    j => j
+                        .HasOne(rc => rc.Competency)
+                        .WithMany()
+                        .HasForeignKey(rc => rc.CompetencyId),
+                    j => j
+                        .HasOne(rc => rc.Resource)
+                        .WithMany()
+                        .HasForeignKey(rc => rc.ResourceId),
+                    j =>
+                    {
+                        j.ToTable("ResourceCompetencies");
+                        j.HasKey(t => new { t.ResourceId, t.CompetencyId });
+                    }
+                );
         });
 
         modelBuilder.Entity<Competency>(entity =>
@@ -72,13 +86,10 @@ public class ResourcesDbContext : DbContext
         // Seed resource-competency relationships
         var resourceCompetencies = resources.SelectMany(r => r.Competencies.Select(c => new
         {
-            ResourcesId = r.Id,
-            CompetenciesId = c.Id
+            ResourceId = r.Id,
+            CompetencyId = c.Id
         }));
 
-        modelBuilder.Entity<Resource>()
-            .HasMany(e => e.Competencies)
-            .WithMany(e => e.Resources)
-            .UsingEntity(j => j.HasData(resourceCompetencies));
+        modelBuilder.Entity<ResourceCompetency>().HasData(resourceCompetencies);
     }
 }

@@ -336,4 +336,402 @@ public class ResourceServiceTests : IDisposable
                 break;
         }
     }
+
+    [Fact]
+    public async Task ListResourcesAsync_WithInvalidPageParameters_NormalizesParameters()
+    {
+        // Act
+        var result = await _resourceService.ListResourcesAsync(
+            pageNumber: -1,
+            pageSize: -5
+        );
+
+        // Assert
+        Assert.NotNull(result);
+        Assert.Equal(1, result.CurrentPage);  // Should normalize to page 1
+        Assert.Equal(10, result.PageSize);    // Should normalize to default page size
+    }
+
+    [Fact]
+    public async Task ListResourcesAsync_WithEmptyDatabase_ReturnsEmptyResult()
+    {
+        // Arrange
+        ClearContext();
+
+        // Act
+        var result = await _resourceService.ListResourcesAsync(1, 10);
+
+        // Assert
+        Assert.NotNull(result);
+        Assert.Empty(result.Items);
+        Assert.Equal(0, result.TotalCount);
+        Assert.Equal(0, result.TotalPages);
+        Assert.False(result.HasNextPage);
+        Assert.False(result.HasPreviousPage);
+    }
+
+    [Fact]
+    public async Task GetResourceByIdAsync_WithInvalidId_ReturnsNull()
+    {
+        // Act
+        var result = await _resourceService.GetResourceByIdAsync(-1);
+
+        // Assert
+        Assert.Null(result);
+    }
+
+    [Fact]
+    public async Task CreateResourceAsync_WithNullCompetencyIds_ThrowsArgumentException()
+    {
+        // Arrange
+        var request = new CreateResourceRequest(
+            "Test Resource",
+            new DateOnly(1990, 1, 1),
+            5,
+            null!
+        );
+
+        // Act & Assert
+        await Assert.ThrowsAsync<ArgumentException>(() => 
+            _resourceService.CreateResourceAsync(request));
+    }
+
+    [Fact]
+    public async Task CreateResourceAsync_WithEmptyCompetencyIds_ThrowsArgumentException()
+    {
+        // Arrange
+        var request = new CreateResourceRequest(
+            "Test Resource",
+            new DateOnly(1990, 1, 1),
+            5,
+            Array.Empty<int>()
+        );
+
+        // Act & Assert
+        await Assert.ThrowsAsync<ArgumentException>(() => 
+            _resourceService.CreateResourceAsync(request));
+    }
+
+    [Fact]
+    public async Task CreateResourceAsync_WithInvalidCompetencyIds_ThrowsArgumentException()
+    {
+        // Arrange
+        var request = new CreateResourceRequest(
+            "Test Resource",
+            new DateOnly(1990, 1, 1),
+            5,
+            new[] { -1, -2 }  // Invalid IDs
+        );
+
+        // Act & Assert
+        await Assert.ThrowsAsync<ArgumentException>(() => 
+            _resourceService.CreateResourceAsync(request));
+    }
+
+    [Fact]
+    public async Task UpdateResourceAsync_WithNonExistentResource_ReturnsNull()
+    {
+        // Arrange
+        var competencyId = _context.Competencies.First().Id;
+        var request = new UpdateResourceRequest(
+            "Updated Resource",
+            new DateOnly(1995, 1, 1),
+            4,
+            new[] { competencyId }
+        );
+
+        // Act
+        var result = await _resourceService.UpdateResourceAsync(-1, request);
+
+        // Assert
+        Assert.Null(result);
+    }
+
+    [Fact]
+    public async Task UpdateResourceAsync_WithNullCompetencyIds_ThrowsArgumentException()
+    {
+        // Arrange
+        var resourceId = _context.Resources.First().Id;
+        var request = new UpdateResourceRequest(
+            "Updated Resource",
+            new DateOnly(1995, 1, 1),
+            4,
+            null!
+        );
+
+        // Act & Assert
+        await Assert.ThrowsAsync<ArgumentException>(() => 
+            _resourceService.UpdateResourceAsync(resourceId, request));
+    }
+
+    [Fact]
+    public async Task UpdateResourceAsync_WithEmptyCompetencyIds_ThrowsArgumentException()
+    {
+        // Arrange
+        var resourceId = _context.Resources.First().Id;
+        var request = new UpdateResourceRequest(
+            "Updated Resource",
+            new DateOnly(1995, 1, 1),
+            4,
+            Array.Empty<int>()
+        );
+
+        // Act & Assert
+        await Assert.ThrowsAsync<ArgumentException>(() => 
+            _resourceService.UpdateResourceAsync(resourceId, request));
+    }
+
+    [Fact]
+    public async Task UpdateResourceAsync_WithInvalidCompetencyIds_ThrowsArgumentException()
+    {
+        // Arrange
+        var resourceId = _context.Resources.First().Id;
+        var request = new UpdateResourceRequest(
+            "Updated Resource",
+            new DateOnly(1995, 1, 1),
+            4,
+            new[] { -1, -2 }  // Invalid IDs
+        );
+
+        // Act & Assert
+        await Assert.ThrowsAsync<ArgumentException>(() => 
+            _resourceService.UpdateResourceAsync(resourceId, request));
+    }
+
+    [Fact]
+    public async Task DeleteResourceAsync_WithNonExistentResource_ReturnsFalse()
+    {
+        // Act
+        var result = await _resourceService.DeleteResourceAsync(-1);
+
+        // Assert
+        Assert.False(result);
+    }
+
+    [Fact]
+    public async Task ListResourcesAsync_WithCompetencyFilter_ReturnsMatchingResources()
+    {
+        // Act
+        var result = await _resourceService.ListResourcesAsync(
+            pageNumber: 1,
+            pageSize: 10,
+            competency: "SQL"
+        );
+
+        // Assert
+        Assert.NotNull(result);
+        Assert.Equal(2, result.Items.Count());  // Both seeded resources have SQL
+        Assert.All(result.Items, resource =>
+            Assert.Contains(resource.Competencies, c => c.Name == "SQL"));
+    }
+
+    [Fact]
+    public async Task ListResourcesAsync_WithExperienceFilters_ReturnsMatchingResources()
+    {
+        // Act
+        var result = await _resourceService.ListResourcesAsync(
+            pageNumber: 1,
+            pageSize: 10,
+            minYearsOfExperience: 6,
+            maxYearsOfExperience: 10
+        );
+
+        // Assert
+        Assert.NotNull(result);
+        var item = Assert.Single(result.Items);
+        Assert.Equal("Jane Smith", item.Name);
+        Assert.Equal(8, item.YearsOfExperience);
+    }
+
+    [Fact]
+    public async Task ListResourcesAsync_WithPagination_ReturnsCorrectPage()
+    {
+        // Arrange
+        ClearContext();
+        var csharp = CreateUniqueCompetency("C#");
+        _context.SaveChanges();
+
+        // Create 15 resources
+        for (int i = 1; i <= 15; i++)
+        {
+            var resource = CreateUniqueResource(
+                $"Resource {i}",
+                new DateOnly(1990, 1, 1),
+                i,
+                new List<Competency> { csharp }
+            );
+            _context.Resources.Add(resource);
+        }
+        await _context.SaveChangesAsync();
+
+        // Act
+        var result = await _resourceService.ListResourcesAsync(
+            pageNumber: 2,  // Second page
+            pageSize: 5     // 5 items per page
+        );
+
+        // Assert
+        Assert.NotNull(result);
+        Assert.Equal(5, result.Items.Count());
+        Assert.Equal(15, result.TotalCount);
+        Assert.Equal(3, result.TotalPages);
+        Assert.True(result.HasNextPage);
+        Assert.True(result.HasPreviousPage);
+    }
+
+    [Fact]
+    public async Task ListResourcesAsync_WithNonExistentCompetency_ReturnsEmptyResult()
+    {
+        // Act
+        var result = await _resourceService.ListResourcesAsync(
+            pageNumber: 1,
+            pageSize: 10,
+            competency: "NonExistentCompetency"
+        );
+
+        // Assert
+        Assert.NotNull(result);
+        Assert.Empty(result.Items);
+    }
+
+    [Fact]
+    public async Task ListResourcesAsync_WithInvalidAgeRange_ReturnsEmptyResult()
+    {
+        // Act
+        var result = await _resourceService.ListResourcesAsync(
+            pageNumber: 1,
+            pageSize: 10,
+            minAge: 100,  // No one is this old in test data
+            maxAge: 150
+        );
+
+        // Assert
+        Assert.NotNull(result);
+        Assert.Empty(result.Items);
+    }
+
+    [Fact]
+    public async Task ListResourcesAsync_WithInvalidExperienceRange_ReturnsEmptyResult()
+    {
+        // Act
+        var result = await _resourceService.ListResourcesAsync(
+            pageNumber: 1,
+            pageSize: 10,
+            minYearsOfExperience: 50,  // No one has this much experience
+            maxYearsOfExperience: 100
+        );
+
+        // Assert
+        Assert.NotNull(result);
+        Assert.Empty(result.Items);
+    }
+
+    [Fact]
+    public async Task CreateResourceAsync_WithNonExistentCompetencyId_ThrowsArgumentException()
+    {
+        // Arrange
+        var request = new CreateResourceRequest(
+            "Test Resource",
+            new DateOnly(1990, 1, 1),
+            5,
+            new[] { 99999 }  // Non-existent competency ID
+        );
+
+        // Act & Assert
+        var ex = await Assert.ThrowsAsync<ArgumentException>(() => 
+            _resourceService.CreateResourceAsync(request));
+        Assert.Contains("One or more specified competency IDs do not exist", ex.Message);
+    }
+
+    [Fact]
+    public async Task UpdateResourceAsync_WithNonExistentCompetencyId_ThrowsArgumentException()
+    {
+        // Arrange
+        var resourceId = _context.Resources.First().Id;
+        var request = new UpdateResourceRequest(
+            "Updated Resource",
+            new DateOnly(1995, 1, 1),
+            4,
+            new[] { 99999 }  // Non-existent competency ID
+        );
+
+        // Act & Assert
+        var ex = await Assert.ThrowsAsync<ArgumentException>(() => 
+            _resourceService.UpdateResourceAsync(resourceId, request));
+        Assert.Contains("One or more specified competency IDs do not exist", ex.Message);
+    }
+
+    [Fact]
+    public async Task ListResourcesAsync_WithLargePageSize_HandlesCorrectly()
+    {
+        // Arrange
+        ClearContext();
+        var csharp = CreateUniqueCompetency("C#");
+        _context.SaveChanges();
+
+        // Create 100 resources
+        for (int i = 1; i <= 100; i++)
+        {
+            var resource = CreateUniqueResource(
+                $"Resource {i}",
+                new DateOnly(1990, 1, 1),
+                i % 20,  // Years of experience 0-19
+                new List<Competency> { csharp }
+            );
+            _context.Resources.Add(resource);
+        }
+        await _context.SaveChangesAsync();
+
+        // Act
+        var result = await _resourceService.ListResourcesAsync(
+            pageNumber: 1,
+            pageSize: 1000  // Very large page size
+        );
+
+        // Assert
+        Assert.NotNull(result);
+        Assert.Equal(100, result.Items.Count());
+        Assert.Equal(100, result.TotalCount);
+        Assert.Equal(1, result.TotalPages);
+        Assert.False(result.HasNextPage);
+        Assert.False(result.HasPreviousPage);
+    }
+
+    [Fact]
+    public async Task ListResourcesAsync_WithHighPageNumber_ReturnsEmptyResult()
+    {
+        // Act
+        var result = await _resourceService.ListResourcesAsync(
+            pageNumber: 1000,  // Very high page number
+            pageSize: 10
+        );
+
+        // Assert
+        Assert.NotNull(result);
+        Assert.Empty(result.Items);
+        Assert.True(result.HasPreviousPage);
+        Assert.False(result.HasNextPage);
+    }
+
+    [Fact]
+    public async Task ListResourcesAsync_WithAllFiltersNull_ReturnsAllResources()
+    {
+        // Act
+        var result = await _resourceService.ListResourcesAsync(
+            pageNumber: 1,
+            pageSize: 10,
+            name: null,
+            minAge: null,
+            maxAge: null,
+            minYearsOfExperience: null,
+            maxYearsOfExperience: null,
+            competency: null,
+            sortBy: null,
+            sortDirection: null
+        );
+
+        // Assert
+        Assert.NotNull(result);
+        Assert.Equal(2, result.Items.Count());  // Should return all seeded resources
+    }
 } 
